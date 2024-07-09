@@ -1,0 +1,119 @@
+version: "3"
+
+services:
+    kuralkan-staging:
+        build:
+            context: ../.
+            dockerfile: Dockerfile.laravel
+        image: hakase-labs/laravel
+        container_name: kuralkan-staging
+        restart: always
+        environment:
+            SERVICE_NAME: kuralkan-staging
+            SERVICE_TAGS: dev
+        working_dir: /var/www/html
+        volumes:
+            - ../storage:/var/www/html/storage
+            - ../.env:/var/www/html/.env
+            - ./supervisor/supervisord.conf:/etc/supervisord.conf
+            - ./php/php.ini:/usr/local/etc/php/php.ini
+            - ./php/fpm/staging/php-fpm.conf:/usr/local/etc/php-fpm.conf
+            - ./php/fpm/staging/www.conf:/usr/local/etc/php-fpm.d/www.conf
+            - templates:/var/www/html/resources/views/templates
+        networks:
+            - kuralkan-appnet-staging
+        depends_on:
+            - kuralkan-db-staging
+            - redis-staging
+        healthcheck:
+            test: ["CMD-SHELL", "php artisan --version"]
+            interval: 1m30s
+            timeout: 10s
+            retries: 3
+            start_period: 40s
+
+    kuralkan-nginx-staging:
+        image: nginx:alpine
+        container_name: kuralkan-nginx-staging
+        restart: always
+        links:
+            - kuralkan-staging
+        ports:
+            - "80:80"
+            - "3333:3333"
+        volumes:
+            - ../:/var/www/html
+            - ./nginx/conf.d/default.conf:/etc/nginx/conf.d/default.conf
+            - ../storage:/var/www/html/storage
+            - /var/www/certbot/conf:/etc/letsencrypt
+            - /var/www/certbot/www:/var/www/certbot
+            - templates:/var/www/html/resources/views/templates
+        networks:
+            - kuralkan-appnet-staging
+        depends_on:
+            - kuralkan-staging
+        healthcheck:
+            test: ["CMD", "curl", "-f", "http://localhost"]
+            interval: 1m30s
+            timeout: 10s
+            retries: 3
+            start_period: 40s
+
+    kuralkan-db-staging:
+        image: mariadb
+        restart: always
+        container_name: kuralkan-db-staging
+        ports:
+            - 33033:3306
+        environment:
+            MYSQL_ROOT_PASSWORD: Mn3EUvJAN2EbNMg94sKw
+            MYSQL_DATABASE: kuralkan_db_staging
+            SERVICE_NAME: mysql
+        volumes:
+            - kuralkan-dbdata-staging:/var/lib/mysql/
+            - ./mysql/my.cnf:/etc/mysql/my.cnf
+        networks:
+            - kuralkan-appnet-staging
+        healthcheck:
+            test: ["CMD", "mariadb-admin", "ping", "-h", "localhost", "-pMn3EUvJAN2EbNMg94sKw"]
+            interval: 30s
+            timeout: 10s
+            retries: 3
+
+    phpmyadmin:
+        image: phpmyadmin
+        restart: always
+        ports:
+        - 3001:80
+        environment:
+        - PMA_ARBITRARY=1
+
+    redis-staging:
+        container_name: redis-staging
+        image: redis:latest
+        restart: always
+        ports:
+            - "6379:6379"
+        command: redis-server /usr/local/etc/redis/redis.conf --requirepass kuralkanredis
+        volumes:
+            - ./redis/redis.conf:/usr/local/etc/redis/redis.conf
+            - cache:/data
+        networks:
+            - kuralkan-appnet-staging
+        healthcheck:
+            test: ["CMD", "redis-cli", "ping"]
+            interval: 30s
+            timeout: 10s
+            retries: 3
+
+networks:
+    kuralkan-appnet-staging:
+        driver: bridge
+
+volumes:
+    kuralkan-dbdata-staging:
+        driver: local
+    cache:
+        driver: local
+    templates:
+        driver: local

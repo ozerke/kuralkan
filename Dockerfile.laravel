@@ -1,0 +1,104 @@
+# Set master image
+FROM php:8.1-fpm-alpine3.14
+
+COPY ./docker/php/php.ini /etc/php8/php.ini
+COPY ./docker/php/fpm/staging/php-fpm.conf /usr/local/etc/php-fpm.conf
+COPY ./docker/php/fpm/staging/www.conf /usr/local/etc/php-fpm.d/www.conf
+
+# Copy composer.lock and composer.json
+COPY ./composer.lock ./composer.json /var/www/html/
+
+# Set working directory
+WORKDIR /var/www/html
+
+# Install Additional dependencies
+RUN apk update && apk add --no-cache \
+    build-base shadow vim curl \
+    php8 \
+    oniguruma-dev \
+    php8-fpm \
+    php8-common \
+    php8-pdo \
+    php8-pdo_mysql \
+    php8-mysqli \
+    php8-mbstring \
+    php8-xml \
+    php8-openssl \
+    php8-json \
+    php8-phar \
+    php8-zip \
+    php8-gd \
+    php8-dom \
+    php8-session \
+    php8-zlib \ 
+    php8-gd \ 
+    php8-soap \
+    php8-exif \ 
+    libpng-dev \
+    libzip-dev \
+    sudo \
+    supervisor \
+    autoconf libmcrypt-dev zip libxml2-dev
+
+RUN pecl install redis
+
+# Add and Enable PHP-PDO Extenstions
+RUN docker-php-ext-install pdo pdo_mysql
+RUN docker-php-ext-enable pdo_mysql
+
+RUN docker-php-ext-install gd
+RUN docker-php-ext-enable gd
+
+RUN docker-php-ext-install zip
+RUN docker-php-ext-enable zip
+
+RUN pecl install mcrypt && docker-php-ext-enable mcrypt
+
+RUN docker-php-ext-install xml && docker-php-ext-enable xml
+
+RUN docker-php-ext-install soap && docker-php-ext-enable soap
+
+RUN docker-php-ext-enable redis.so
+
+RUN docker-php-ext-install pcntl
+
+RUN docker-php-ext-install exif
+
+# Install PHP Composer
+RUN curl -sS https://getcomposer.org/installer | php -- --install-dir=/usr/local/bin --filename=composer
+
+# Remove Cache
+RUN rm -rf /var/cache/apk/*
+
+# Add UID '1000' to www-data
+RUN usermod -u 1000 www-data
+
+# Copy existing application directory permissions
+COPY --chown=www-data:www-data . /var/www/html
+
+RUN composer install --no-dev --optimize-autoloader --no-interaction
+
+# Copy Supervisor configuration
+COPY ./docker/supervisor/supervisord.conf /etc/supervisord.conf
+
+# Ensure the log directory and files have the correct permissions
+RUN mkdir -p /var/log/supervisord /var/run/php /usr/local/etc/php-fpm.d
+RUN chown -R www-data:www-data /var/log/supervisord /var/run/php /usr/local/etc/php-fpm.d
+RUN chmod -R 755 /var/log/supervisord /var/run/php
+
+# Copy the health check script
+COPY ./docker/supervisor/healthcheck.sh /usr/local/bin/healthcheck.sh
+RUN chmod +x /usr/local/bin/healthcheck.sh
+
+# Create an entrypoint script to start both Supervisor and PHP-FPM
+COPY ./docker/entrypoint.sh /usr/local/bin/entrypoint.sh
+RUN chmod +x /usr/local/bin/entrypoint.sh
+
+# Change current user to www-data
+USER www-data
+
+# Expose port 9000 for PHP-FPM
+EXPOSE 9000
+
+# Use the entrypoint script as the CMD
+CMD ["/usr/local/bin/entrypoint.sh"]

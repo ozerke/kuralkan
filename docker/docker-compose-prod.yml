@@ -1,0 +1,119 @@
+version: "3"
+
+services:
+    kuralkan-prod:
+        build:
+            context: ../.
+            dockerfile: Dockerfile.prod.laravel
+        image: hakase-labs/laravel
+        container_name: kuralkan-prod
+        restart: always
+        environment:
+            SERVICE_NAME: kuralkan-prod
+            SERVICE_TAGS: prod
+        working_dir: /var/www/html
+        volumes:
+            - ../storage:/var/www/html/storage
+            - ../.env:/var/www/html/.env
+            - ./supervisor/supervisord.conf:/etc/supervisord.conf
+            - ./php/php.ini:/usr/local/etc/php/php.ini
+            - ./php/fpm/prod/php-fpm.conf:/usr/local/etc/php-fpm.conf
+            - ./php/fpm/prod/www.conf:/usr/local/etc/php-fpm.d/www.conf
+            - templates:/var/www/html/resources/views/templates
+        networks:
+            - kuralkan-appnet-prod
+        depends_on:
+            - kuralkan-db-prod
+            - redis-prod
+        healthcheck:
+            test: ["CMD-SHELL", "php artisan --version"]
+            interval: 1m30s
+            timeout: 10s
+            retries: 3
+            start_period: 40s
+
+    kuralkan-nginx-prod:
+        image: nginx:alpine
+        container_name: kuralkan-nginx-prod
+        restart: always
+        links:
+            - kuralkan-prod
+        ports:
+            - "80:80"
+            - "3311:3311"
+        volumes:
+            - ../:/var/www/html
+            - ./nginx/conf.d/default.prod.conf:/etc/nginx/conf.d/default.conf
+            - ../storage:/var/www/html/storage
+            - /var/www/certbot/conf:/etc/letsencrypt
+            - /var/www/certbot/www:/var/www/certbot
+            - templates:/var/www/html/resources/views/templates
+        networks:
+            - kuralkan-appnet-prod
+        depends_on:
+            - kuralkan-prod
+        healthcheck:
+            test: ["CMD", "curl", "-f", "http://localhost"]
+            interval: 1m30s
+            timeout: 10s
+            retries: 3
+            start_period: 40s
+
+    kuralkan-db-prod:
+        image: mariadb
+        restart: always
+        container_name: kuralkan-db-prod
+        ports:
+            - 33031:3306
+        environment:
+            MYSQL_ROOT_PASSWORD: Mn3EUvJAN2EbNMg94sKw
+            MYSQL_DATABASE: kuralkan_db_prod
+            SERVICE_NAME: mysql
+        volumes:
+            - kuralkan-dbdata-prod:/var/lib/mysql/
+            - ./mysql/my.prod.cnf:/etc/mysql/my.cnf
+        networks:
+            - kuralkan-appnet-prod
+        healthcheck:
+            test: ["CMD", "mariadb-admin", "ping", "-h", "localhost", "-pMn3EUvJAN2EbNMg94sKw"]
+            interval: 30s
+            timeout: 10s
+            retries: 3
+
+    phpmyadmin:
+        image: phpmyadmin
+        restart: always
+        ports:
+        - 3002:80
+        environment:
+        - PMA_ARBITRARY=1
+
+    redis-prod:
+        container_name: redis-prod
+        image: redis:latest
+        restart: always
+        ports:
+            - "6379:6379"
+        command: redis-server /usr/local/etc/redis/redis.conf --requirepass kuralkanredis
+        volumes:
+            - ./redis/redis.conf:/usr/local/etc/redis/redis.conf
+            - cache:/data
+        networks:
+            - kuralkan-appnet-prod
+        healthcheck:
+            test: ["CMD", "redis-cli", "ping"]
+            interval: 30s
+            timeout: 10s
+            retries: 3
+
+networks:
+    kuralkan-appnet-prod:
+        driver: bridge
+
+volumes:
+    kuralkan-dbdata-prod:
+        driver: local
+    cache:
+        driver: local
+    templates:
+        driver: local

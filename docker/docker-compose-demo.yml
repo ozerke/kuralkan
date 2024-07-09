@@ -1,0 +1,108 @@
+version: "3"
+
+services:
+    kuralkan-demo:
+        build:
+            context: ../.
+            dockerfile: Dockerfile.laravel
+        image: hakase-labs/laravel
+        container_name: kuralkan-demo
+        restart: always
+        environment:
+            SERVICE_NAME: kuralkan-demo
+            SERVICE_TAGS: dev
+        working_dir: /var/www/html
+        volumes:
+            - ../storage:/var/www/html/storage
+            - ../.env:/var/www/html/.env
+            - ./supervisor/supervisord.conf:/etc/supervisor/conf.d/
+            - ./php/php.ini:/usr/local/etc/php/php.ini
+            - templates:/var/www/html/resources/views/templates
+        networks:
+            - kuralkan-appnet-demo
+        depends_on:
+            - kuralkan-db-demo
+            - redis-demo
+        healthcheck:
+            test: ["CMD-SHELL", "php artisan --version"]
+            interval: 1m30s
+            timeout: 10s
+            retries: 3
+            start_period: 40s
+
+    kuralkan-nginx-demo:
+        image: nginx:alpine
+        container_name: kuralkan-nginx-demo
+        restart: always
+        links:
+            - kuralkan-demo
+        ports:
+            - "4444:80"
+            - "3334:3333"
+        volumes:
+            - ../:/var/www/html
+            - ./nginx/conf.d/default.demo.conf:/etc/nginx/conf.d/default.conf
+            - ../storage:/var/www/html/storage
+            - /var/www/certbot/conf:/etc/letsencrypt
+            - /var/www/certbot/www:/var/www/certbot
+            - templates:/var/www/html/resources/views/templates
+        networks:
+            - kuralkan-appnet-demo
+        depends_on:
+            - kuralkan-demo
+        healthcheck:
+            test: ["CMD", "curl", "-f", "http://localhost"]
+            interval: 1m30s
+            timeout: 10s
+            retries: 3
+            start_period: 40s
+
+    kuralkan-db-demo:
+        image: mariadb
+        restart: always
+        container_name: kuralkan-db-demo
+        ports:
+            - 33034:3306
+        environment:
+            MYSQL_ROOT_PASSWORD: Mn3EUvJAN2EbNMg94sKw
+            MYSQL_DATABASE: kuralkan_db_demo
+            SERVICE_NAME: mysql
+        volumes:
+            - kuralkan-dbdata-demo:/var/lib/mysql/
+            - ./mysql/my.cnf:/etc/mysql/my.cnf
+        networks:
+            - kuralkan-appnet-demo
+        healthcheck:
+            test: ["CMD", "mariadb-admin", "ping", "-h", "localhost", "-pMn3EUvJAN2EbNMg94sKw"]
+            interval: 30s
+            timeout: 10s
+            retries: 3
+
+    redis-demo:
+        container_name: redis-demo
+        image: redis:latest
+        restart: always
+        ports:
+            - "6380:6379"
+        command: redis-server --save 20 1 --loglevel warning --requirepass kuralkanredis
+        volumes:
+            - cache:/data
+        networks:
+            - kuralkan-appnet-demo
+        healthcheck:
+            test: ["CMD", "redis-cli", "ping"]
+            interval: 30s
+            timeout: 10s
+            retries: 3
+
+networks:
+    kuralkan-appnet-demo:
+        driver: bridge
+
+volumes:
+    kuralkan-dbdata-demo:
+        driver: local
+    cache:
+        driver: local
+    templates:
+        driver: local

@@ -1,0 +1,31 @@
+.bg-sidebar {
+    background-color: #171733;
+}
+
+.rounded-full {
+    border-radius: 100%;
+}
+
+.bg-accent {
+    background-color: #a9c6ffc9 !important;
+    &:hover {
+        background-color: #8db1ffc0 !important;
+    }
+}
+
+.card-col {
+    cursor: pointer;
+    width: 100%;
+    margin-bottom: 10px;
+    transition: 0.7s all;
+
+    &:hover {
+        transform: scale(0.95);
+    }
+}
+
+@media screen and (min-width: 992px) {
+    .card-col {
+        width: 18%;
+    }
+}
